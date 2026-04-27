@@ -18,7 +18,7 @@ from datetime import datetime
 # ===================== JIRA CONFIG =====================
 JIRA_URL = "https://ravibagra2006.atlassian.net"
 JIRA_EMAIL = "ravibagra2006@gmail.com"
-JIRA_API_TOKEN = ""your_api_token""
+JIRA_API_TOKEN = "ATATT3xFfGF0oaJ9psORta2ZA6uypje8zL7ymCoSGPKcXVNmqf1SyPVOEKzaTGBN0J1FXrkXAKaLV35EYNyB3LS8mHNOwwJzuGYkiP-rCK-jqnOoFoB8OmpLj1aBmZE3sLTr90x-od5brOX4ZyhjNjS9hE3r7BJbxwmvCaaGMOkJQaCBK_1VLPE=A48A28ED"
 JIRA_PROJECT_KEY = "EVA1"
 # =======================================================
 
@@ -40,6 +40,8 @@ def take_screenshot(driver, name="bug_screenshot"):
     driver.save_screenshot(filename)
     print(f"Screenshot liya: {filename}")
     return filename
+
+def create_jira_bug(summary, description, screenshot_path):
     auth = (JIRA_EMAIL, JIRA_API_TOKEN)
     headers = {"Content-Type": "application/json"}
 
