@@ -284,7 +284,7 @@ def login_and_upload_pdf(url, user, pwd):
 
 # ===== RUN =====
 login_and_upload_pdf(
-    "https://evaluation.dcstechnosis.com/Admin/Dashboard",
+    "https://uat.evaluation.dcstechnosis.com/Admin/Dashboard",
     "superadmin@gmail.com",
     "123"
 )

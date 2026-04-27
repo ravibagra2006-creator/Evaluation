@@ -322,7 +322,7 @@ def open_user_list_and_search_math(subject="math"):
  
         if not user_list_clicked:
             # Fallback: direct URL
-            driver.get("https://evaluation.dcstechnosis.com/Admin/userList")
+            driver.get("https://uat.evaluation.dcstechnosis.com/Admin/userList")
             time.sleep(3)
             print("  --> User List direct URL se khola!")
  

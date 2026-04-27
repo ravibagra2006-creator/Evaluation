@@ -119,7 +119,7 @@ def subject_flow(url, user, pwd):
 
 # ===== RUN =====
 subject_flow(
-    "https://evaluation.dcstechnosis.com/",
+    "https://uat.evaluation.dcstechnosis.com/",
     "superadmin@gmail.com",
     "123"
 )

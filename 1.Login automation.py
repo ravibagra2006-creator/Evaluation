@@ -186,7 +186,7 @@ def login(url, user, pwd, test_name="Login_Test"):
 
 # ===================== QA TESTS RUN KARO =====================
 def run_all_qa_tests():
-    url = "https://evaluation.dcstechnosis.com/Admin/Dashboard"
+    url = "https://uat.evaluation.dcstechnosis.com/Admin/Dashboard"
 
     print("\n[START] QA Testing Shuru Ho Rahi Hai...\n")
     results = []
