@@ -2,7 +2,7 @@
 import sys
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
- 
+
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -14,14 +14,14 @@ import time
 import requests
 import os
 from datetime import datetime
- 
+
 # ===================== JIRA CONFIG =====================
-JIRA_URL       = "https://ravibagra2006.atlassian.net"
-JIRA_EMAIL     = "ravibagra2006@gmail.com"
-JIRA_API_TOKEN = "ATATT3xFfGF0oaJ9psORta2ZA6uypje8zL7ymCoSGPKcXVNmqf1SyPVOEKzaTGBN0J1FXrkXAKaLV35EYNyB3LS8mHNOwwJzuGYkiP-rCK-jqnOoFoB8OmpLj1aBmZE3sLTr90x-od5brOX4ZyhjNjS9hE3r7BJbxwmvCaaGMOkJQaCBK_1VLPE=A48A28ED"
+JIRA_URL         = "https://ravibagra2006.atlassian.net"
+JIRA_EMAIL       = "ravibagra2006@gmail.com"
+JIRA_API_TOKEN   = "ATATT3xFfGF0oaJ9psORta2ZA6uypje8zL7ymCoSGPKcXVNmqf1SyPVOEKzaTGBN0J1FXrkXAKaLV35EYNyB3LS8mHNOwwJzuGYkiP-rCK-jqnOoFoB8OmpLj1aBmZE3sLTr90x-od5brOX4ZyhjNjS9hE3r7BJbxwmvCaaGMOkJQaCBK_1VLPE=A48A28ED"
 JIRA_PROJECT_KEY = "EVA1"
 # =======================================================
- 
+
 # ===================== QA TEST CASES =====================
 QA_TEST_CASES = [
     ("TC01_Name_Numbers",    "Ravi123",     "ravish@gmail.com",  "123", "9666666666",  "Teacher", "rs",    "Name me number - error aana chahiye"),
@@ -33,7 +33,7 @@ QA_TEST_CASES = [
     ("TC07_Valid_Data",      "Ravi Sharma", "ravisha@gmail.com", "123", "9777777777",  "Teacher", "math",  "Valid data - save ho, duplicate check ho, delete ho"),
 ]
 # =========================================================
- 
+
 def set_value(driver, element, value):
     element.clear()
     driver.execute_script("""
@@ -41,14 +41,14 @@ def set_value(driver, element, value):
         arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
         arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
     """, element, value)
- 
+
 def take_screenshot(driver, name="screenshot"):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename  = f"{name}_{timestamp}.png"
     driver.save_screenshot(filename)
-    print(f"  --> Screenshot liya: {filename}")
+    print(f"  --> SS liya (BUG): {filename}")
     return filename
- 
+
 def create_jira_bug(summary, description, screenshot_path):
     auth    = (JIRA_EMAIL, JIRA_API_TOKEN)
     headers = {"Content-Type": "application/json"}
@@ -79,11 +79,11 @@ def create_jira_bug(summary, description, screenshot_path):
                 auth=auth
             )
         if attach_res.status_code == 200:
-            print(f"  --> Screenshot attach ho gaya: {issue_key}")
+            print(f"  --> SS Jira me attach ho gaya: {issue_key}")
     return issue_key
- 
+
 def do_login(driver, wait):
-    driver.get("https://evaluation.dcstechnosis.com/")
+    driver.get("https://uat.evaluation.dcstechnosis.com")
     time.sleep(4)
     wait.until(EC.visibility_of_element_located(
         (By.XPATH, "//input[@type='text' or @type='email']"))
@@ -91,7 +91,7 @@ def do_login(driver, wait):
     driver.find_element(By.XPATH, "//input[@type='password']").send_keys("123" + Keys.RETURN)
     time.sleep(4)
     print("  --> Login ho gaya!")
- 
+
 def open_add_user_form(driver, wait):
     user_mgmt = wait.until(EC.element_to_be_clickable(
         (By.XPATH, "//*[contains(text(),'User Management')]"))
@@ -103,7 +103,7 @@ def open_add_user_form(driver, wait):
     )
     driver.execute_script("arguments[0].click();", add_user)
     time.sleep(2)
- 
+
 def fill_and_save_form(driver, wait, name, email, password, mobile, role, subject):
     name_field = wait.until(EC.visibility_of_element_located(
         (By.XPATH, "//input[@placeholder='Enter name']"))
@@ -138,7 +138,7 @@ def fill_and_save_form(driver, wait, name, email, password, mobile, role, subjec
     if not saved:
         raise Exception("Save button nahi mila!")
     time.sleep(3)
- 
+
 def get_page_message(driver):
     try:
         for xpath in ["//*[contains(@class,'alert')]", "//*[contains(@class,'toast')]",
@@ -151,17 +151,18 @@ def get_page_message(driver):
     except:
         pass
     return None
- 
+
 def check_success_message(driver):
     try:
         page_text = driver.find_element(By.TAG_NAME, "body").text.lower()
-        for kw in ["user added successfully", "added successfully", "successfully added", "success", "saved successfully", "user created"]:
+        for kw in ["user added successfully", "added successfully", "successfully added",
+                   "success", "saved successfully", "user created"]:
             if kw in page_text:
                 return True
     except:
         pass
     return False
- 
+
 def check_already_exists_message(driver):
     try:
         page_text = driver.find_element(By.TAG_NAME, "body").text.lower()
@@ -171,17 +172,17 @@ def check_already_exists_message(driver):
     except:
         pass
     return False
- 
+
 def is_still_on_add_form(driver):
     try:
         return len(driver.find_elements(By.XPATH, "//input[@placeholder='Enter name']")) > 0
     except:
         return False
- 
+
 def get_visible_inputs(driver):
     all_inputs = driver.find_elements(By.XPATH, "//input[@type='text' or @type='search' or @type='email']")
     return [i for i in all_inputs if i.is_displayed()]
- 
+
 def search_in_second_box(driver, search_text):
     try:
         print(f"  --> Second search box me search: '{search_text}'")
@@ -210,18 +211,26 @@ def search_in_second_box(driver, search_text):
     except Exception as e:
         print(f"  --> Search error: {str(e)}")
         return False
- 
-def clear_second_search_box(driver):
-    try:
-        visible_inputs = get_visible_inputs(driver)
-        box = visible_inputs[1] if len(visible_inputs) >= 2 else (visible_inputs[0] if visible_inputs else None)
-        if box:
-            box.clear()
-            box.send_keys(Keys.RETURN)
-            time.sleep(2)
-    except:
-        pass
- 
+
+def open_user_list(driver, wait):
+    user_mgmt = wait.until(EC.element_to_be_clickable(
+        (By.XPATH, "//*[contains(text(),'User Management')]"))
+    )
+    driver.execute_script("arguments[0].click();", user_mgmt)
+    time.sleep(2)
+    for ul_xpath in ["//a[@href='/Admin/userList']", "//a[contains(@href,'userList')]",
+                     "//*[normalize-space(text())='User List']", "//*[contains(text(),'User List')]"]:
+        try:
+            ul_btn = wait.until(EC.element_to_be_clickable((By.XPATH, ul_xpath)))
+            driver.execute_script("arguments[0].click();", ul_btn)
+            time.sleep(3)
+            return True
+        except:
+            continue
+    driver.get("https://uat.evaluation.dcstechnosis.com/Admin/userList")
+    time.sleep(3)
+    return True
+
 def delete_only_this_user(driver, wait, email):
     try:
         print(f"  --> Delete kar raha hai: {email}")
@@ -249,7 +258,8 @@ def delete_only_this_user(driver, wait, email):
                     driver.switch_to.alert.accept()
                     time.sleep(2)
                 except:
-                    for cxp in ["//button[contains(text(),'Yes')]", "//button[contains(text(),'Confirm')]", "//button[contains(text(),'OK')]"]:
+                    for cxp in ["//button[contains(text(),'Yes')]", "//button[contains(text(),'Confirm')]",
+                                "//button[contains(text(),'OK')]"]:
                         try:
                             driver.find_element(By.XPATH, cxp).click()
                             time.sleep(2)
@@ -265,90 +275,34 @@ def delete_only_this_user(driver, wait, email):
     except Exception as e:
         print(f"  --> Delete error: {str(e)}")
         return False
- 
- 
-# =====================================================
-# SABSE ZAROORI FUNCTION: Sab TC complete hone ke baad
-# User Management > User List > Second search > "math"
-# =====================================================
+
 def open_user_list_and_search_math(subject="math"):
     print("\n" + "="*60)
-    print("  [FINAL STEP] Sab TC complete - Ab User List kholenge")
     print("  [FINAL STEP] User Management > User List > 'math' search")
     print("="*60)
- 
     options = webdriver.ChromeOptions()
     options.add_argument("--start-maximized")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
- 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     wait   = WebDriverWait(driver, 30)
- 
     try:
-        # Step 1: Login
         do_login(driver, wait)
- 
-        # Step 2: User Management par click karo
-        print("\n  --> [1] User Management par click kar raha hai...")
-        user_mgmt = wait.until(EC.element_to_be_clickable(
-            (By.XPATH, "//*[contains(text(),'User Management')]"))
-        )
-        driver.execute_script("arguments[0].click();", user_mgmt)
-        time.sleep(2)
-        print("  --> User Management click ho gaya!")
- 
-        # Step 3: User List par click karo
-        print("  --> [2] User List par click kar raha hai...")
-        user_list_clicked = False
-        for ul_xpath in [
-            "//a[@href='/Admin/userList']",
-            "//a[contains(@href,'userList')]",
-            "//*[normalize-space(text())='User List']",
-            "//*[contains(text(),'User List')]",
-        ]:
-            try:
-                ul_btn = wait.until(EC.element_to_be_clickable((By.XPATH, ul_xpath)))
-                driver.execute_script("arguments[0].click();", ul_btn)
-                time.sleep(3)
-                print("  --> User List par click ho gaya!")
-                user_list_clicked = True
-                break
-            except:
-                continue
- 
-        if not user_list_clicked:
-            # Fallback: direct URL
-            driver.get("https://uat.evaluation.dcstechnosis.com/Admin/userList")
-            time.sleep(3)
-            print("  --> User List direct URL se khola!")
- 
-        # Step 4: Second search box me "math" search karo
-        print(f"\n  --> [3] Second search box me '{subject}' search kar raha hai...")
+        open_user_list(driver, wait)
         found = search_in_second_box(driver, subject)
- 
-        # Screenshot lo
-        ss = take_screenshot(driver, f"FINAL_UserList_{subject}_search")
- 
+        # Final step me SS hamesha lo (last state confirm karne ke liye)
+        take_screenshot(driver, f"FINAL_UserList_{subject}_search")
         if found:
-            print(f"\n  --> [PASS] '{subject}' User List me MILA! TC07 ka data confirm hua.")
+            print(f"  --> [PASS] '{subject}' User List me MILA!")
         else:
-            print(f"\n  --> [FAIL] '{subject}' User List me NAHI MILA!")
- 
-        print("\n  --> Browser band nahi kar raha - aap dekh sakte hain...")
-        time.sleep(10)  # 10 second browser open rakhega dekhne ke liye
- 
+            print(f"  --> [FAIL] '{subject}' User List me NAHI MILA!")
+        time.sleep(10)
     except Exception as e:
         print(f"  --> Final step error: {str(e)}")
-        import traceback
-        traceback.print_exc()
     finally:
         driver.quit()
- 
- 
+
+
+# ===================== MAIN TEST FUNCTION =====================
 def run_test(test_name, name, email, password, mobile, role, subject, expected):
     options = webdriver.ChromeOptions()
     options.add_argument("--start-maximized")
@@ -357,179 +311,168 @@ def run_test(test_name, name, email, password, mobile, role, subject, expected):
     options.add_argument("--disable-dev-shm-usage")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
- 
+
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     wait   = WebDriverWait(driver, 30)
     result = "UNKNOWN"
- 
+
     INVALID_TESTS = ["TC01_Name_Numbers", "TC02_Name_Icons", "TC03_Mobile_11digit",
                      "TC04_Mobile_9digit", "TC05_Subject_Numbers", "TC06_Subject_Icons"]
- 
+
     try:
         print(f"\n{'='*55}")
         print(f"[TEST] {test_name}")
         print(f"  Name: {name} | Email: {email} | Mobile: {mobile} | Subject: {subject}")
         print(f"{'='*55}")
- 
+
         do_login(driver, wait)
- 
+
         # ── GALAT DATA TESTS (TC01-TC06) ──
         if test_name in INVALID_TESTS:
             open_add_user_form(driver, wait)
             fill_and_save_form(driver, wait, name, email, password, mobile, role, subject)
- 
-            message      = get_page_message(driver)
-            success_aaya = check_success_message(driver)
+
+            message       = get_page_message(driver)
+            success_aaya  = check_success_message(driver)
             still_on_form = is_still_on_add_form(driver)
- 
+
             print(f"  --> Message: {message} | Success: {success_aaya} | Form pe: {still_on_form}")
- 
+
             if success_aaya:
-                ss = take_screenshot(driver, f"BUG_{test_name}")
+                # ===== BUG: Galat data save ho gaya → SS LO =====
+                ss = take_screenshot(driver, f"BUG_{test_name}_wrong_data_saved")
                 ik = create_jira_bug(
-                    f"[BUG] {test_name} - Galat data pe User Added Successfully aaya",
-                    f"TC: {test_name}\nName: {name}\nEmail: {email}\nMobile: {mobile}\nSubject: {subject}\nExpected: Error\nActual: Success\nMsg: {message}\nTime: {datetime.now()}",
+                    f"[BUG] {test_name} - Galat data save ho gaya",
+                    f"TC: {test_name}\nName: {name}\nEmail: {email}\nMobile: {mobile}\n"
+                    f"Subject: {subject}\nExpected: Validation Error\nActual: Save ho gaya\n"
+                    f"Msg: {message}\nTime: {datetime.now()}",
                     ss
                 )
-                result = f"[BUG] Galat data pe success aaya - Jira: {ik}"
-                # cleanup
-                user_mgmt = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'User Management')]")))
-                driver.execute_script("arguments[0].click();", user_mgmt)
-                time.sleep(2)
-                for ul_xpath in ["//a[@href='/Admin/userList']", "//a[contains(@href,'userList')]", "//*[contains(text(),'User List')]"]:
-                    try:
-                        ul_btn = wait.until(EC.element_to_be_clickable((By.XPATH, ul_xpath)))
-                        driver.execute_script("arguments[0].click();", ul_btn)
-                        time.sleep(3)
-                        break
-                    except:
-                        continue
-                delete_only_this_user(driver, wait, email)
- 
-            elif still_on_form and message:
-                result = f"[PASS] Error aaya: '{message}'"
-            elif still_on_form and not message:
-                ss = take_screenshot(driver, f"BUG_{test_name}_no_msg")
-                ik = create_jira_bug(f"[BUG] {test_name} - Koi validation message nahi",
-                    f"TC: {test_name}\nExpected: Validation error\nActual: Koi message nahi\nTime: {datetime.now()}", ss)
-                result = f"[BUG] Validation message nahi aaya - Jira: {ik}"
-            else:
-                ss = take_screenshot(driver, f"BUG_{test_name}_saved")
-                ik = create_jira_bug(f"[BUG] {test_name} - Galat data save ho gaya",
-                    f"TC: {test_name}\nEmail: {email}\nExpected: Error\nActual: Save ho gaya\nMsg: {message}\nTime: {datetime.now()}", ss)
                 result = f"[BUG] Galat data save ho gaya - Jira: {ik}"
-                user_mgmt = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'User Management')]")))
-                driver.execute_script("arguments[0].click();", user_mgmt)
-                time.sleep(2)
-                for ul_xpath in ["//a[@href='/Admin/userList']", "//a[contains(@href,'userList')]", "//*[contains(text(),'User List')]"]:
-                    try:
-                        ul_btn = wait.until(EC.element_to_be_clickable((By.XPATH, ul_xpath)))
-                        driver.execute_script("arguments[0].click();", ul_btn)
-                        time.sleep(3)
-                        break
-                    except:
-                        continue
+                # Cleanup: galat data delete karo
+                open_user_list(driver, wait)
                 delete_only_this_user(driver, wait, email)
- 
+
+            elif still_on_form:
+                # ===== PASS: Validation aaya, form pe ruka → SS NAHI =====
+                print(f"  --> [PASS] Validation aaya, SS nahi liya")
+                result = f"[PASS] Validation error aaya: '{message}'"
+
+            else:
+                # ===== BUG: Na success na form pe, unknown state → SS LO =====
+                ss = take_screenshot(driver, f"BUG_{test_name}_unknown_state")
+                ik = create_jira_bug(
+                    f"[BUG] {test_name} - Unknown state - galat data ka kya hua pata nahi",
+                    f"TC: {test_name}\nEmail: {email}\nExpected: Validation Error\n"
+                    f"Actual: Unknown state\nMsg: {message}\nTime: {datetime.now()}",
+                    ss
+                )
+                result = f"[BUG] Unknown state - Jira: {ik}"
+                open_user_list(driver, wait)
+                delete_only_this_user(driver, wait, email)
+
         # ── SAHI DATA TEST (TC07) ──
         else:
             print("\n  [STEP 1] Valid data add kar raha hai...")
             open_add_user_form(driver, wait)
             fill_and_save_form(driver, wait, name, email, password, mobile, role, subject)
- 
+
             first_exists  = check_already_exists_message(driver)
             first_success = check_success_message(driver)
             first_msg     = get_page_message(driver)
             still_on_form = is_still_on_add_form(driver)
- 
+
             if first_exists or still_on_form:
-                result = f"[INFO] Already exists ya form pe ruka - Message: '{first_msg}'"
-            else:
+                # Already exists ya form pe ruka → SS nahi (expected behavior)
+                print(f"  --> Already exists ya form pe ruka - SS nahi liya")
+                result = f"[INFO] Already exists - Message: '{first_msg}'"
+
+            elif first_success:
                 print(f"  --> Save ho gaya! Message: {first_msg}")
- 
-                # Duplicate check
+
+                # ── STEP 2: Duplicate check ──
                 print("\n  [STEP 2] Same data dobara daal raha hai (duplicate check)...")
                 open_add_user_form(driver, wait)
                 fill_and_save_form(driver, wait, name, email, password, mobile, role, subject)
- 
+
                 second_exists  = check_already_exists_message(driver)
                 second_success = check_success_message(driver)
                 second_msg     = get_page_message(driver)
                 still_on_form2 = is_still_on_add_form(driver)
- 
+
                 if second_exists or still_on_form2:
-                    print("  --> Duplicate block hua! (Expected)")
- 
-                    # Delete
+                    # ===== PASS: Duplicate block hua → SS NAHI =====
+                    print("  --> [PASS] Duplicate block hua - SS nahi liya")
+
+                    # ── STEP 3: Delete ──
                     print("\n  [STEP 3] User delete kar raha hai...")
-                    user_mgmt = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'User Management')]")))
-                    driver.execute_script("arguments[0].click();", user_mgmt)
-                    time.sleep(2)
-                    for ul_xpath in ["//a[@href='/Admin/userList']", "//a[contains(@href,'userList')]", "//*[contains(text(),'User List')]"]:
-                        try:
-                            ul_btn = wait.until(EC.element_to_be_clickable((By.XPATH, ul_xpath)))
-                            driver.execute_script("arguments[0].click();", ul_btn)
-                            time.sleep(3)
-                            break
-                        except:
-                            continue
+                    open_user_list(driver, wait)
                     delete_only_this_user(driver, wait, email)
-                    result = f"[PASS] Save hua | Duplicate block hua | Delete ho gaya"
- 
+                    result = "[PASS] Save hua | Duplicate block hua | Delete ho gaya"
+
                 elif second_success:
+                    # ===== BUG: Duplicate save ho gaya → SS LO =====
                     ss = take_screenshot(driver, f"BUG_{test_name}_duplicate_saved")
-                    ik = create_jira_bug(f"[BUG] {test_name} - Duplicate save ho gaya",
-                        f"TC: {test_name}\nEmail: {email}\nExpected: Already Exists\nActual: Duplicate save\nTime: {datetime.now()}", ss)
+                    ik = create_jira_bug(
+                        f"[BUG] {test_name} - Duplicate user save ho gaya",
+                        f"TC: {test_name}\nEmail: {email}\nExpected: Already Exists error\n"
+                        f"Actual: Duplicate save ho gaya\nTime: {datetime.now()}",
+                        ss
+                    )
                     result = f"[BUG] Duplicate save ho gaya - Jira: {ik}"
-                    user_mgmt = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'User Management')]")))
-                    driver.execute_script("arguments[0].click();", user_mgmt)
-                    time.sleep(2)
-                    for ul_xpath in ["//a[@href='/Admin/userList']", "//a[contains(@href,'userList')]", "//*[contains(text(),'User List')]"]:
-                        try:
-                            ul_btn = wait.until(EC.element_to_be_clickable((By.XPATH, ul_xpath)))
-                            driver.execute_script("arguments[0].click();", ul_btn)
-                            time.sleep(3)
-                            break
-                        except:
-                            continue
+                    # Dono duplicate delete karo
+                    open_user_list(driver, wait)
                     delete_only_this_user(driver, wait, email)
                     time.sleep(2)
                     delete_only_this_user(driver, wait, email)
+
                 else:
-                    result = f"[BUG] Unexpected - Message: '{second_msg}'"
- 
+                    # ===== BUG: Unknown state → SS LO =====
+                    ss = take_screenshot(driver, f"BUG_{test_name}_unexpected")
+                    ik = create_jira_bug(
+                        f"[BUG] {test_name} - Unexpected state duplicate check me",
+                        f"TC: {test_name}\nEmail: {email}\nMsg: {second_msg}\nTime: {datetime.now()}",
+                        ss
+                    )
+                    result = f"[BUG] Unexpected state - Jira: {ik}"
+
+            else:
+                # ===== BUG: Valid data save nahi hua → SS LO =====
+                ss = take_screenshot(driver, f"BUG_{test_name}_valid_data_not_saved")
+                ik = create_jira_bug(
+                    f"[BUG] {test_name} - Valid data save nahi hua",
+                    f"TC: {test_name}\nName: {name}\nEmail: {email}\nMobile: {mobile}\n"
+                    f"Subject: {subject}\nExpected: Save ho\nActual: Save nahi hua\n"
+                    f"Msg: {first_msg}\nTime: {datetime.now()}",
+                    ss
+                )
+                result = f"[BUG] Valid data save nahi hua - Jira: {ik}"
+
         print(f"\n  Result: {result}")
- 
+
     except Exception as e:
         result = f"[ERROR] {str(e)}"
         import traceback
         traceback.print_exc()
     finally:
         driver.quit()
- 
+
     return result
- 
- 
+
+
 # ===================== RUN ALL TESTS =====================
 def run_all_qa_tests():
     print("\n[START] QA Testing Shuru Ho Rahi Hai\n")
     results = []
- 
-    # TC01 se TC07 sab chalao
+
     for tc in QA_TEST_CASES:
         test_name, name, email, password, mobile, role, subject, expected = tc
         result = run_test(test_name, name, email, password, mobile, role, subject, expected)
         results.append({"Test": test_name, "Result": result})
         time.sleep(2)
- 
-    # =====================================================
-    # FINAL STEP: Sab TC complete hone ke BAAD
-    # Naya browser kholo, login karo,
-    # User Management > User List > Second search > "math"
-    # =====================================================
+
     open_user_list_and_search_math(subject="math")
- 
-    # Report
+
     print("\n" + "="*60)
     print("[REPORT] QA TEST REPORT")
     print("="*60)
@@ -538,6 +481,6 @@ def run_all_qa_tests():
     print("="*60)
     print("[DONE] QA Testing Complete!")
     print("="*60)
- 
- 
+
+
 run_all_qa_tests()

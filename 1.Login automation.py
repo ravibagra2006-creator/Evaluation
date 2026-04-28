@@ -13,6 +13,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 import requests
 import os
+import subprocess
 from datetime import datetime
 
 # ===================== JIRA CONFIG =====================
@@ -22,17 +23,18 @@ JIRA_API_TOKEN = "ATATT3xFfGF0oaJ9psORta2ZA6uypje8zL7ymCoSGPKcXVNmqf1SyPVOEKzaTG
 JIRA_PROJECT_KEY = "EVA1"
 # =======================================================
 
-# ===================== QA TEST CASES =====================
+VSCODE_BUG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bug_reports.md")
+
 QA_TEST_CASES = [
-    ("TC01_Wrong_Password", "superadmin@gmail.com", "wrongpass123",  "Login fail hona chahiye"),
-    ("TC02_Wrong_Username", "wronguser@gmail.com",  "123",           "Login fail hona chahiye"),
-    ("TC03_Both_Wrong",     "wrong@gmail.com",      "wrongpass",     "Login fail hona chahiye"),
-    ("TC04_Empty_Username", "",                     "123",           "Login fail hona chahiye"),
-    ("TC05_Empty_Password", "superadmin@gmail.com", "",              "Login fail hona chahiye"),
-    ("TC06_Both_Empty",     "",                     "",              "Login fail hona chahiye"),
-    ("TC07_Correct_Login",  "superadmin@gmail.com", "123",           "Login success hona chahiye"),
+    ("TC01_Wrong_Password", "superadmin@gmail.com", "wrongpass123", "Login fail hona chahiye"),
+    ("TC02_Wrong_Username", "wronguser@gmail.com",  "123",          "Login fail hona chahiye"),
+    ("TC03_Both_Wrong",     "wrong@gmail.com",      "wrongpass",    "Login fail hona chahiye"),
+    ("TC04_Empty_Username", "",                     "123",          "Login fail hona chahiye"),
+    ("TC05_Empty_Password", "superadmin@gmail.com", "",             "Login fail hona chahiye"),
+    ("TC06_Both_Empty",     "",                     "",             "Login fail hona chahiye"),
+    ("TC07_Correct_Login",  "superadmin@gmail.com", "123",          "Login success hona chahiye"),
 ]
-# =========================================================
+
 
 def take_screenshot(driver, name="bug_screenshot"):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -40,6 +42,40 @@ def take_screenshot(driver, name="bug_screenshot"):
     driver.save_screenshot(filename)
     print(f"Screenshot liya: {filename}")
     return filename
+
+
+def write_bug_to_vscode_file(test_name, url, user, pwd, error_msg, screenshot_path, jira_key=None):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    bug_entry = f"""
+---
+
+## Bug: {test_name}
+- **Time:** {timestamp}
+- **URL:** {url}
+- **Username:** `{user}`
+- **Password:** `{pwd}`
+- **Error:** {error_msg}
+- **Screenshot:** {screenshot_path}
+- **Jira Issue:** {jira_key if jira_key else 'N/A'}
+
+"""
+    if not os.path.exists(VSCODE_BUG_FILE):
+        with open(VSCODE_BUG_FILE, "w", encoding="utf-8") as f:
+            f.write("# Bug Reports\n\n")
+            f.write("> Yeh file automatically generate hoti hai QA tests se\n")
+
+    with open(VSCODE_BUG_FILE, "a", encoding="utf-8") as f:
+        f.write(bug_entry)
+
+    print(f"VS Code bug file me likha: {VSCODE_BUG_FILE}")
+
+    try:
+        subprocess.Popen(["code", VSCODE_BUG_FILE])
+        print("VS Code me bug_reports.md open ho gaya")
+    except Exception as e:
+        print(f"VS Code open nahi hua, manually dekho: {VSCODE_BUG_FILE}")
+
 
 def create_jira_bug(summary, description, screenshot_path):
     auth = (JIRA_EMAIL, JIRA_API_TOKEN)
@@ -87,11 +123,12 @@ def create_jira_bug(summary, description, screenshot_path):
                 auth=auth
             )
         if attach_response.status_code == 200:
-            print(f"Screenshot attach ho gaya issue {issue_key} me")
+            print(f"Screenshot attach ho gaya: {issue_key}")
         else:
-            print(f"Screenshot attach karne me error: {attach_response.text}")
+            print(f"Screenshot attach error: {attach_response.text}")
 
     return issue_key
+
 
 def check_login_failed(driver):
     try:
@@ -101,6 +138,7 @@ def check_login_failed(driver):
         return False
     except:
         return True
+
 
 def login(url, user, pwd, test_name="Login_Test"):
     service = Service(ChromeDriverManager().install())
@@ -126,7 +164,6 @@ def login(url, user, pwd, test_name="Login_Test"):
 
         username_field.clear()
         password_field.clear()
-
         username_field.send_keys(user)
         password_field.send_keys(pwd)
         password_field.send_keys(Keys.RETURN)
@@ -134,57 +171,81 @@ def login(url, user, pwd, test_name="Login_Test"):
         time.sleep(5)
 
         if check_login_failed(driver):
-            result = "[FAIL] Login nahi hua (Expected for wrong credentials)"
-            print(result)
-            screenshot_path = take_screenshot(driver, f"{test_name}_failed")
+            # ===== Login fail hua =====
+            if test_name == "TC07_Correct_Login":
+                # BUG: Sahi credentials se login nahi hua
+                result = "[BUG] Sahi credentials se login nahi hua"
+                print(result)
+                screenshot_path = take_screenshot(driver, f"{test_name}_BUG_correct_creds_failed")
 
-            # Jira me bug report karo sirf wrong credentials ke liye
-            if test_name != "TC07_Correct_Login":
-                bug_summary = f"Login Test - {test_name}"
+                bug_summary = f"BUG - {test_name} - Sahi credentials se login nahi hua"
                 bug_description = (
                     f"Test Case: {test_name}\n"
                     f"URL: {url}\n"
                     f"Username: {user}\n"
                     f"Password: {pwd}\n"
-                    f"Result: Login fail hua wrong credentials se\n"
+                    f"Result: Sahi credentials se login nahi hua - BUG!\n"
                     f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                 )
                 issue_key = create_jira_bug(bug_summary, bug_description, screenshot_path)
-                if issue_key:
-                    print(f"Jira me add ho gaya: {issue_key}")
+                write_bug_to_vscode_file(
+                    test_name, url, user, pwd,
+                    "Sahi credentials se login nahi hua - BUG!",
+                    screenshot_path, issue_key
+                )
+            else:
+                # PASS: Wrong credentials se login fail hua (expected) → SS nahi
+                result = "[PASS] Wrong credentials se login fail hua (Expected)"
+                print(result)
+                screenshot_path = None
+
         else:
-            result = "[PASS] Login ho gaya"
-            print(result)
-            screenshot_path = take_screenshot(driver, f"{test_name}_success")
+            # ===== Login ho gaya =====
+            if test_name != "TC07_Correct_Login":
+                # BUG: Wrong credentials se login ho gaya → SS lo
+                result = "[BUG] Wrong credentials se login ho gaya - SECURITY BUG!"
+                print(result)
+                screenshot_path = take_screenshot(driver, f"{test_name}_BUG_wrong_creds_passed")
+
+                bug_summary = f"SECURITY BUG - {test_name} - Wrong credentials se login hua"
+                bug_description = (
+                    f"Test Case: {test_name}\n"
+                    f"URL: {url}\n"
+                    f"Username: {user}\n"
+                    f"Password: {pwd}\n"
+                    f"Result: Wrong credentials se login ho gaya - SECURITY BUG!\n"
+                    f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                issue_key = create_jira_bug(bug_summary, bug_description, screenshot_path)
+                write_bug_to_vscode_file(
+                    test_name, url, user, pwd,
+                    "Wrong credentials se login ho gaya - SECURITY BUG!",
+                    screenshot_path, issue_key
+                )
+            else:
+                # PASS: Sahi credentials se login hua (expected) → SS nahi
+                result = "[PASS] Sahi credentials se login hua (Expected)"
+                print(result)
+                screenshot_path = None
 
     except Exception as e:
         error_msg = str(e)
         result = f"[ERROR] {error_msg}"
-        print(f"Bug mila! Error: {error_msg}")
-
+        print(f"Error: {error_msg}")
         screenshot_path = take_screenshot(driver, f"{test_name}_error")
 
-        bug_summary = f"Login Bug - {test_name} - {url}"
-        bug_description = (
-            f"Test Case: {test_name}\n"
-            f"URL: {url}\n"
-            f"Username: {user}\n"
-            f"Password: {pwd}\n"
-            f"Error: {error_msg}\n"
-            f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"Page Title: {driver.title}"
+        issue_key = create_jira_bug(
+            f"ERROR - {test_name}",
+            f"Test Case: {test_name}\nURL: {url}\nError: {error_msg}",
+            screenshot_path
         )
-
-        issue_key = create_jira_bug(bug_summary, bug_description, screenshot_path)
-        if issue_key:
-            print(f"Bug Jira me add ho gaya: {issue_key}")
+        write_bug_to_vscode_file(test_name, url, user, pwd, error_msg, screenshot_path, issue_key)
 
     print(f"Result: {result}")
     driver.quit()
     return result
 
 
-# ===================== QA TESTS RUN KARO =====================
 def run_all_qa_tests():
     url = "https://uat.evaluation.dcstechnosis.com/Admin/Dashboard"
 
@@ -203,7 +264,6 @@ def run_all_qa_tests():
         })
         time.sleep(3)
 
-    # Final Report
     print("\n" + "="*60)
     print("[REPORT] QA TEST REPORT")
     print("="*60)
@@ -214,6 +274,7 @@ def run_all_qa_tests():
         print(f"   Expected : {r['Expected']}")
         print(f"   Result   : {r['Result']}")
     print("\n" + "="*60)
+    print(f"\nBug Report File: {VSCODE_BUG_FILE}")
 
 
 run_all_qa_tests()
