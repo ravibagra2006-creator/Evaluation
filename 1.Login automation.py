@@ -1,280 +1,210 @@
 # -*- coding: utf-8 -*-
-import sys
-import io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-
+import sys, io, os, time, requests, subprocess
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
-import requests
-import os
-import subprocess
-from datetime import datetime
+from webdriver_manager.chrome import ChromeDriverManager
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-# ===================== JIRA CONFIG =====================
-JIRA_URL = "https://ravibagra2006.atlassian.net"
+# ==================== CONFIG ====================
+JIRA_URL   = "https://ravibagra2006.atlassian.net"
 JIRA_EMAIL = "ravibagra2006@gmail.com"
-JIRA_API_TOKEN = "ATATT3xFfGF0oaJ9psORta2ZA6uypje8zL7ymCoSGPKcXVNmqf1SyPVOEKzaTGBN0J1FXrkXAKaLV35EYNyB3LS8mHNOwwJzuGYkiP-rCK-jqnOoFoB8OmpLj1aBmZE3sLTr90x-od5brOX4ZyhjNjS9hE3r7BJbxwmvCaaGMOkJQaCBK_1VLPE=A48A28ED"
-JIRA_PROJECT_KEY = "EVA1"
-# =======================================================
+JIRA_TOKEN = "ATATT3xFfGF0oaJ9psORta2ZA6uypje8zL7ymCoSGPKcXVNmqf1SyPVOEKzaTGBN0J1FXrkXAKaLV35EYNyB3LS8mHNOwwJzuGYkiP-rCK-jqnOoFoB8OmpLj1aBmZE3sLTr90x-od5brOX4ZyhjNjS9hE3r7BJbxwmvCaaGMOkJQaCBK_1VLPE=A48A28ED"
+JIRA_KEY   = "EVA1"
+LOGIN_URL  = "https://uat.evaluation.dcstechnosis.com/Admin/Dashboard"
+BUG_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bug_reports.md")
+# ================================================
 
-VSCODE_BUG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bug_reports.md")
-
-QA_TEST_CASES = [
-    ("TC01_Wrong_Password", "superadmin@gmail.com", "wrongpass123", "Login fail hona chahiye"),
-    ("TC02_Wrong_Username", "wronguser@gmail.com",  "123",          "Login fail hona chahiye"),
-    ("TC03_Both_Wrong",     "wrong@gmail.com",      "wrongpass",    "Login fail hona chahiye"),
-    ("TC04_Empty_Username", "",                     "123",          "Login fail hona chahiye"),
-    ("TC05_Empty_Password", "superadmin@gmail.com", "",             "Login fail hona chahiye"),
-    ("TC06_Both_Empty",     "",                     "",             "Login fail hona chahiye"),
-    ("TC07_Correct_Login",  "superadmin@gmail.com", "123",          "Login success hona chahiye"),
+# (TC_ID, username, password, is_valid_login)
+TEST_CASES = [
+    ("TC01_Wrong_Password", "superadmin@gmail.com", "wrongpass123", False),
+    ("TC02_Wrong_Username", "wronguser@gmail.com",  "123",          False),
+    ("TC03_Both_Wrong",     "wrong@gmail.com",      "wrongpass",    False),
+    ("TC04_Empty_Username", "",                     "123",          False),
+    ("TC05_Empty_Password", "superadmin@gmail.com", "",             False),
+    ("TC06_Both_Empty",     "",                     "",             False),
+    ("TC07_Correct_Login",  "superadmin@gmail.com", "123",          True),
 ]
 
+# Human-readable Jira summaries per test case and bug type
+SUMMARIES = {
+    ("TC01_Wrong_Password", "security"):  "TC01 - Galat password dalne par bhi login ho gaya - Security Bug",
+    ("TC02_Wrong_Username", "security"):  "TC02 - Galat username dalne par bhi login ho gaya - Security Bug",
+    ("TC03_Both_Wrong",     "security"):  "TC03 - Dono galat hone par bhi login ho gaya - Critical Security Bug",
+    ("TC04_Empty_Username", "security"):  "TC04 - Khaali username par bhi login ho gaya - Security Bug",
+    ("TC05_Empty_Password", "security"):  "TC05 - Khaali password par bhi login ho gaya - Security Bug",
+    ("TC06_Both_Empty",     "security"):  "TC06 - Dono khaali hone par bhi login ho gaya - Critical Security Bug",
+    ("TC07_Correct_Login",  "auth_fail"): "TC07 - Sahi credentials dalne par bhi login nahi hua - Authentication Bug",
+}
 
-def take_screenshot(driver, name="bug_screenshot"):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{name}_{timestamp}.png"
-    driver.save_screenshot(filename)
-    print(f"Screenshot liya: {filename}")
-    return filename
+def get_summary(tc, bug_type):
+    u = tc[1] if tc[1] else "khaali"
+    p = tc[2] if tc[2] else "khaali"
+    return SUMMARIES.get((tc[0], bug_type),
+           f"{tc[0]} - {u}/{p} daalte waqt script crash - Automation Error")
 
+def jira_description(tc, bug_type, summary, error=None):
+    u  = tc[1] if tc[1] else "(khaali)"
+    p  = tc[2] if tc[2] else "(khaali)"
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-def write_bug_to_vscode_file(test_name, url, user, pwd, error_msg, screenshot_path, jira_key=None):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if bug_type == "security":
+        steps    = [f"1. URL kholo: {LOGIN_URL}", f"2. Username: {u}",
+                    f"3. Password: {p}", "4. Login karo",
+                    "5. Login HO GAYA -- hona NAHI chahiye tha"]
+        expected = "Login FAIL hona chahiye tha -- credentials galat/khaali hain"
+        actual   = "Login HO GAYA -- unauthorized access mili [BUG]"
+        severity = "[CRITICAL] Security vulnerability -- koi bhi galat credentials se ghus sakta hai"
 
-    bug_entry = f"""
----
+    elif bug_type == "auth_fail":
+        steps    = [f"1. URL kholo: {LOGIN_URL}", f"2. Sahi Username: {u}",
+                    f"3. Sahi Password: {p}", "4. Login karo",
+                    "5. Login NAHI hua -- hona chahiye tha"]
+        expected = "Login SUCCESS hona chahiye tha -- credentials sahi hain"
+        actual   = "Login FAIL ho gaya -- system ne sahi credentials reject kar diye [BUG]"
+        severity = "[HIGH] Valid users login nahi kar pa rahe"
 
-## Bug: {test_name}
-- **Time:** {timestamp}
-- **URL:** {url}
-- **Username:** `{user}`
-- **Password:** `{pwd}`
-- **Error:** {error_msg}
-- **Screenshot:** {screenshot_path}
-- **Jira Issue:** {jira_key if jira_key else 'N/A'}
+    else:
+        steps    = [f"1. Script run karo: {tc[0]}", f"2. Error: {error}"]
+        expected = "Test bina crash ke complete ho"
+        actual   = f"Script crash ho gayi -- Error: {error} [BUG]"
+        severity = "[MEDIUM] Automation script me problem hai"
 
-"""
-    if not os.path.exists(VSCODE_BUG_FILE):
-        with open(VSCODE_BUG_FILE, "w", encoding="utf-8") as f:
-            f.write("# Bug Reports\n\n")
-            f.write("> Yeh file automatically generate hoti hai QA tests se\n")
+    def row(label, val):
+        return {"type": "paragraph", "content": [
+            {"type": "text", "text": f"{label}: ", "marks": [{"type": "strong"}]},
+            {"type": "text", "text": val}]}
 
-    with open(VSCODE_BUG_FILE, "a", encoding="utf-8") as f:
-        f.write(bug_entry)
+    def head(txt):
+        return {"type": "heading", "attrs": {"level": 3},
+                "content": [{"type": "text", "text": txt}]}
 
-    print(f"VS Code bug file me likha: {VSCODE_BUG_FILE}")
+    def bullets(items):
+        return {"type": "bulletList", "content": [
+            {"type": "listItem", "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": i}]}
+            ]} for i in items]}
 
-    try:
-        subprocess.Popen(["code", VSCODE_BUG_FILE])
-        print("VS Code me bug_reports.md open ho gaya")
-    except Exception as e:
-        print(f"VS Code open nahi hua, manually dekho: {VSCODE_BUG_FILE}")
+    return {"type": "doc", "version": 1, "content": [
+        {"type": "paragraph", "content": [
+            {"type": "text", "text": summary, "marks": [{"type": "strong"}]}]},
+        head("Test Details"),
+        row("Test Case", tc[0]), row("Username", u), row("Password", p), row("Time", ts),
+        head("Steps to Reproduce"), bullets(steps),
+        head("Expected Result"),
+        {"type": "paragraph", "content": [{"type": "text", "text": expected}]},
+        head("Actual Result"),
+        {"type": "paragraph", "content": [
+            {"type": "text", "text": actual, "marks": [{"type": "strong"}]}]},
+        head("Severity"),
+        {"type": "paragraph", "content": [{"type": "text", "text": severity}]},
+    ]}
 
+def screenshot(driver, name):
+    f = f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    driver.save_screenshot(f)
+    print(f"Screenshot liya: {f}")
+    return f
 
-def create_jira_bug(summary, description, screenshot_path):
-    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
-    headers = {"Content-Type": "application/json"}
-
-    issue_payload = {
-        "fields": {
-            "project": {"key": JIRA_PROJECT_KEY},
-            "summary": summary,
-            "description": {
-                "type": "doc",
-                "version": 1,
-                "content": [
-                    {
-                        "type": "paragraph",
-                        "content": [{"type": "text", "text": description}]
-                    }
-                ]
-            },
-            "issuetype": {"name": "Bug"},
-            "priority": {"name": "High"}
-        }
-    }
-
-    response = requests.post(
-        f"{JIRA_URL}/rest/api/3/issue",
-        json=issue_payload,
-        auth=auth,
-        headers=headers
-    )
-
-    if response.status_code != 201:
-        print(f"Jira issue create karne me error: {response.text}")
-        return None
-
-    issue_key = response.json()["key"]
-    print(f"Jira bug create hua: {issue_key}")
-
-    if screenshot_path and os.path.exists(screenshot_path):
-        with open(screenshot_path, "rb") as f:
-            attach_response = requests.post(
-                f"{JIRA_URL}/rest/api/3/issue/{issue_key}/attachments",
+def create_jira_bug(summary, desc_adf, img):
+    auth = (JIRA_EMAIL, JIRA_TOKEN)
+    r = requests.post(f"{JIRA_URL}/rest/api/3/issue",
+        json={"fields": {"project": {"key": JIRA_KEY}, "summary": summary,
+                         "description": desc_adf,
+                         "issuetype": {"name": "Bug"}, "priority": {"name": "High"}}},
+        auth=auth, headers={"Content-Type": "application/json"})
+    if r.status_code != 201:
+        print(f"Jira error: {r.text}"); return None
+    key = r.json()["key"]
+    print(f"Jira issue bana: {key} -- {summary}")
+    if img and os.path.exists(img):
+        with open(img, "rb") as f:
+            requests.post(f"{JIRA_URL}/rest/api/3/issue/{key}/attachments",
                 headers={"X-Atlassian-Token": "no-check"},
-                files={"file": (os.path.basename(screenshot_path), f, "image/png")},
-                auth=auth
-            )
-        if attach_response.status_code == 200:
-            print(f"Screenshot attach ho gaya: {issue_key}")
-        else:
-            print(f"Screenshot attach error: {attach_response.text}")
+                files={"file": (os.path.basename(img), f, "image/png")}, auth=auth)
+    return key
 
-    return issue_key
+def write_bug_file(tc, summary, img, jira_key, error_msg=""):
+    if not os.path.exists(BUG_FILE):
+        open(BUG_FILE, "w", encoding="utf-8").write("# Bug Reports\n\n")
+    with open(BUG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"""
+---
+## {tc[0]}
+- **Summary:** {summary}
+- **Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- **Username:** `{tc[1] if tc[1] else '<khaali>'}`
+- **Password:** `{tc[2] if tc[2] else '<khaali>'}`
+- **Error:** {error_msg or summary}
+- **Screenshot:** {img or 'N/A'}
+- **Jira:** {jira_key or 'N/A'}
+""")
+    try: subprocess.Popen(["code", BUG_FILE])
+    except: pass
 
+def report_bug(driver, tc, bug_type, ss_name, error=None):
+    """Bug aane par -- screenshot lo, Jira issue banao, file me likho."""
+    summary = get_summary(tc, bug_type)
+    img     = screenshot(driver, ss_name)
+    desc    = jira_description(tc, bug_type, summary, error)
+    # Jira Issue: summary = readable bug headline (e.g. "TC01 - Galat password...")
+    key     = create_jira_bug(summary, desc, img)
+    write_bug_file(tc, summary, img, key, error or summary)
+    return summary
 
-def check_login_failed(driver):
-    try:
-        current_url = driver.current_url
-        if "Dashboard" not in current_url and "dashboard" not in current_url:
-            return True
-        return False
-    except:
-        return True
-
-
-def login(url, user, pwd, test_name="Login_Test"):
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service)
-    screenshot_path = None
+def run_test(tc):
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
     result = "UNKNOWN"
-
-    driver.get(url)
-    wait = WebDriverWait(driver, 15)
-
     try:
-        print(f"\n{'='*50}")
-        print(f"Test: {test_name}")
-        print(f"Username: '{user}' | Password: '{pwd}'")
-        print(f"{'='*50}")
-
-        username_field = wait.until(
-            EC.presence_of_element_located((By.XPATH, "//input[@type='text' or @type='email']"))
-        )
-        password_field = wait.until(
-            EC.presence_of_element_located((By.XPATH, "//input[@type='password']"))
-        )
-
-        username_field.clear()
-        password_field.clear()
-        username_field.send_keys(user)
-        password_field.send_keys(pwd)
-        password_field.send_keys(Keys.RETURN)
-
+        driver.get(LOGIN_URL)
+        wait    = WebDriverWait(driver, 15)
+        u_field = wait.until(EC.presence_of_element_located(
+                      (By.XPATH, "//input[@type='text' or @type='email']")))
+        p_field = wait.until(EC.presence_of_element_located(
+                      (By.XPATH, "//input[@type='password']")))
+        u_field.clear(); u_field.send_keys(tc[1])
+        p_field.clear(); p_field.send_keys(tc[2])
+        p_field.send_keys(Keys.RETURN)
         time.sleep(5)
 
-        if check_login_failed(driver):
-            # ===== Login fail hua =====
-            if test_name == "TC07_Correct_Login":
-                # BUG: Sahi credentials se login nahi hua
-                result = "[BUG] Sahi credentials se login nahi hua"
-                print(result)
-                screenshot_path = take_screenshot(driver, f"{test_name}_BUG_correct_creds_failed")
+        logged_in = "dashboard" in driver.current_url.lower()
+        valid     = tc[3]
 
-                bug_summary = f"BUG - {test_name} - Sahi credentials se login nahi hua"
-                bug_description = (
-                    f"Test Case: {test_name}\n"
-                    f"URL: {url}\n"
-                    f"Username: {user}\n"
-                    f"Password: {pwd}\n"
-                    f"Result: Sahi credentials se login nahi hua - BUG!\n"
-                    f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                )
-                issue_key = create_jira_bug(bug_summary, bug_description, screenshot_path)
-                write_bug_to_vscode_file(
-                    test_name, url, user, pwd,
-                    "Sahi credentials se login nahi hua - BUG!",
-                    screenshot_path, issue_key
-                )
-            else:
-                # PASS: Wrong credentials se login fail hua (expected) → SS nahi
-                result = "[PASS] Wrong credentials se login fail hua (Expected)"
-                print(result)
-                screenshot_path = None
+        if logged_in and not valid:
+            # BUG: Galat/khaali credentials se login ho gaya - Security Bug
+            result = f"[BUG] {report_bug(driver, tc, 'security', f'{tc[0]}_security_bug')}"
+
+        elif not logged_in and valid:
+            # BUG: Sahi credentials dalne par bhi login nahi hua - Authentication Bug
+            result = f"[BUG] {report_bug(driver, tc, 'auth_fail', f'{tc[0]}_auth_fail')}"
+
+        elif logged_in and valid:
+            result = "[PASS] Sahi credentials se login hua"
 
         else:
-            # ===== Login ho gaya =====
-            if test_name != "TC07_Correct_Login":
-                # BUG: Wrong credentials se login ho gaya → SS lo
-                result = "[BUG] Wrong credentials se login ho gaya - SECURITY BUG!"
-                print(result)
-                screenshot_path = take_screenshot(driver, f"{test_name}_BUG_wrong_creds_passed")
-
-                bug_summary = f"SECURITY BUG - {test_name} - Wrong credentials se login hua"
-                bug_description = (
-                    f"Test Case: {test_name}\n"
-                    f"URL: {url}\n"
-                    f"Username: {user}\n"
-                    f"Password: {pwd}\n"
-                    f"Result: Wrong credentials se login ho gaya - SECURITY BUG!\n"
-                    f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                )
-                issue_key = create_jira_bug(bug_summary, bug_description, screenshot_path)
-                write_bug_to_vscode_file(
-                    test_name, url, user, pwd,
-                    "Wrong credentials se login ho gaya - SECURITY BUG!",
-                    screenshot_path, issue_key
-                )
-            else:
-                # PASS: Sahi credentials se login hua (expected) → SS nahi
-                result = "[PASS] Sahi credentials se login hua (Expected)"
-                print(result)
-                screenshot_path = None
+            result = "[PASS] Galat credentials se login fail hua"
 
     except Exception as e:
-        error_msg = str(e)
-        result = f"[ERROR] {error_msg}"
-        print(f"Error: {error_msg}")
-        screenshot_path = take_screenshot(driver, f"{test_name}_error")
+        # BUG: Test script crash ho gayi - Automation Error
+        result = f"[ERROR] {report_bug(driver, tc, 'error', f'{tc[0]}_error', error=str(e))}"
+    finally:
+        driver.quit()
 
-        issue_key = create_jira_bug(
-            f"ERROR - {test_name}",
-            f"Test Case: {test_name}\nURL: {url}\nError: {error_msg}",
-            screenshot_path
-        )
-        write_bug_to_vscode_file(test_name, url, user, pwd, error_msg, screenshot_path, issue_key)
-
-    print(f"Result: {result}")
-    driver.quit()
+    print(f"{'='*55}\n{tc[0]} --> {result}\n{'='*55}")
     return result
 
+# ==================== MAIN ====================
+print("\n[START] QA Testing Shuru...\n")
+results = [(tc[0], run_test(tc)) for tc in TEST_CASES if not time.sleep(2)]
 
-def run_all_qa_tests():
-    url = "https://uat.evaluation.dcstechnosis.com/Admin/Dashboard"
-
-    print("\n[START] QA Testing Shuru Ho Rahi Hai...\n")
-    results = []
-
-    for test_name, username, password, expected in QA_TEST_CASES:
-        print(f"Expected: {expected}")
-        result = login(url, username, password, test_name)
-        results.append({
-            "Test": test_name,
-            "Username": username,
-            "Password": password,
-            "Expected": expected,
-            "Result": result
-        })
-        time.sleep(3)
-
-    print("\n" + "="*60)
-    print("[REPORT] QA TEST REPORT")
-    print("="*60)
-    for r in results:
-        print(f"\n[TEST] {r['Test']}")
-        print(f"   Username : {r['Username']}")
-        print(f"   Password : {r['Password']}")
-        print(f"   Expected : {r['Expected']}")
-        print(f"   Result   : {r['Result']}")
-    print("\n" + "="*60)
-    print(f"\nBug Report File: {VSCODE_BUG_FILE}")
-
-
-run_all_qa_tests()
+print("\n" + "="*55 + "\n[REPORT] FINAL REPORT\n" + "="*55)
+passed = sum(1 for _, r in results if r.startswith("[PASS]"))
+for name, res in results:
+    status = "[PASS]" if res.startswith("[PASS]") else "[FAIL]"
+    print(f"{status} {name}\n   {res}\n")
+print(f"Total: {len(results)} | Pass: {passed} | Fail: {len(results)-passed}")
+print(f"Bug File: {BUG_FILE}")
