@@ -7,6 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
@@ -42,6 +43,41 @@ BUG_INFO = {
                          "Already Exists ya success message chahiye tha"),
     "error":            ("[MEDIUM] Script crash ho gayi", "Test bina crash ke complete ho"),
 }
+
+# ── INSTANT SCREENSHOT (sirf tab jab message/popup screen pe ho) ──
+def wait_and_ss(driver, name, timeout=10):
+    """
+    Jab tak koi error/success/popup message screen pe visible na ho
+    tab tak screenshot nahi lega.
+    Agar message aaya  --> turant SS lo (message screen pe show hoga)
+    Agar message nahi aaya --> SS nahi lega, None return karega
+    """
+    XP = (
+        "//*[contains(@class,'alert')] | //*[contains(@class,'toast')] | "
+        "//*[contains(@class,'success')] | //*[contains(@class,'error')] | "
+        "//*[contains(@class,'invalid')] | //*[contains(@role,'alert')] | "
+        "//*[contains(@class,'swal')] | //*[contains(@class,'notification')] | "
+        "//*[contains(@class,'popup')] | //*[contains(@class,'modal')]"
+    )
+    try:
+        # Message/popup dikhne ka wait karo
+        el = WebDriverWait(driver, timeout).until(
+            EC.visibility_of_element_located((By.XPATH, XP)))
+        msg = el.text.strip()
+        if not msg:
+            # Text empty hai -- parent try karo
+            try: msg = el.find_element(By.XPATH, "..").text.strip()
+            except: pass
+        print(f"  Message screen pe aaya: '{msg}'")
+        # Message screen pe hai -- ABHI SS lo
+        f = f"{name}_{datetime.now().strftime('%H%M%S')}.png"
+        driver.save_screenshot(f)
+        print(f"  Screenshot liya (message visible hai): {f}")
+        return f, msg
+    except TimeoutException:
+        # Koi message nahi aaya -- SS mat lo
+        print(f"  Koi message/popup nahi aaya -- SS skip kiya")
+        return None, None
 
 # ── JIRA ──
 def adf_para(text, bold=False):
@@ -82,11 +118,13 @@ def create_jira(summary, desc, img=None):
                 files={"file": (os.path.basename(img), f, "image/png")}, auth=auth)
     print(f"  Jira: {key} -- {summary}"); return key
 
-def report_bug(driver, tc_id, bug_type, name, email, mobile, subject, msg=None, err=None):
+def report_bug(driver, tc_id, bug_type, name, email, mobile, subject, msg=None, err=None, img=None):
     severity, _ = BUG_INFO.get(bug_type, ("[MEDIUM]", ""))
     summary = f"{tc_id} - {bug_type} - {email} {severity}"
-    img     = f"BUG_{tc_id}_{bug_type}_{datetime.now().strftime('%H%M%S')}.png"
-    driver.save_screenshot(img)
+    # Agar pehle se screenshot liya hai to reuse karo, warna abhi lo
+    if not img:
+        img = f"BUG_{tc_id}_{bug_type}_{datetime.now().strftime('%H%M%S')}.png"
+        driver.save_screenshot(img)
     desc = build_desc(tc_id, bug_type, name, email, mobile, subject, msg, err)
     key  = create_jira(summary, desc, img)
     return f"[BUG] {summary} -- Jira: {key}"
@@ -149,14 +187,6 @@ def body(driver): return driver.find_element(By.TAG_NAME, "body").text.lower()
 def check_success(d): return any(k in body(d) for k in ["user added successfully","success","saved successfully","user created"])
 def check_exists(d):  return any(k in body(d) for k in ["already exists","duplicate","exists"])
 def on_form(d):       return bool(d.find_elements(By.XPATH, "//input[@placeholder='Enter name']"))
-def get_msg(driver):
-    for xp in ["//*[contains(@class,'alert')]","//*[contains(@class,'toast')]",
-               "//*[contains(@class,'success')]","//*[contains(@class,'error')]",
-               "//*[contains(@role,'alert')]"]:
-        for el in driver.find_elements(By.XPATH, xp):
-            t = el.text.strip()
-            if t: return t
-    return None
 
 # ── USER LIST & DELETE ──
 def open_user_list(driver, wait):
@@ -211,41 +241,42 @@ def run_test(tc):
         if tc_id in INVALID:
             click_text(driver, wait, "User Management", "Add User")
             fill_form(driver, wait, name, email, pwd, mobile, role, subject)
-            msg = get_msg(driver)
+            img, msg = wait_and_ss(driver, f"{tc_id}_save")   # <-- turant SS
             if check_success(driver):
-                result = report_bug(driver, tc_id, "wrong_data_saved", name, email, mobile, subject, msg)
+                result = report_bug(driver, tc_id, "wrong_data_saved", name, email, mobile, subject, msg, img=img)
                 open_user_list(driver, wait); delete_user(driver, wait, email)
             elif on_form(driver):
                 result = f"[PASS] Validation aaya: '{msg}'"
             else:
-                result = report_bug(driver, tc_id, "unknown_state", name, email, mobile, subject, msg)
+                result = report_bug(driver, tc_id, "unknown_state", name, email, mobile, subject, msg, img=img)
                 open_user_list(driver, wait); delete_user(driver, wait, email)
 
         else:  # TC07
             click_text(driver, wait, "User Management", "Add User")
             fill_form(driver, wait, name, email, pwd, mobile, role, subject)
-            msg1 = get_msg(driver)
+            img1, msg1 = wait_and_ss(driver, f"{tc_id}_attempt1")   # <-- turant SS
             if check_exists(driver) or on_form(driver):
                 result = f"[INFO] Already exists: '{msg1}'"
             elif check_success(driver):
                 click_text(driver, wait, "User Management", "Add User")
                 fill_form(driver, wait, name, email, pwd, mobile, role, subject)
-                msg2 = get_msg(driver)
+                img2, msg2 = wait_and_ss(driver, f"{tc_id}_attempt2")   # <-- turant SS
                 if check_exists(driver) or on_form(driver):
                     open_user_list(driver, wait); delete_user(driver, wait, email)
                     result = "[PASS] Save | Duplicate block | Delete -- sab sahi"
                 elif check_success(driver):
-                    result = report_bug(driver, tc_id, "duplicate_saved", name, email, mobile, subject, msg2)
+                    result = report_bug(driver, tc_id, "duplicate_saved", name, email, mobile, subject, msg2, img=img2)
                     open_user_list(driver, wait)
                     delete_user(driver, wait, email); time.sleep(2)
                     delete_user(driver, wait, email)
                 else:
-                    result = report_bug(driver, tc_id, "unexpected", name, email, mobile, subject, msg2)
+                    result = report_bug(driver, tc_id, "unexpected", name, email, mobile, subject, msg2, img=img2)
             else:
-                result = report_bug(driver, tc_id, "valid_not_saved", name, email, mobile, subject, msg1)
+                result = report_bug(driver, tc_id, "valid_not_saved", name, email, mobile, subject, msg1, img=img1)
 
     except Exception as e:
-        result = report_bug(driver, tc_id, "error", name, email, mobile, subject, err=str(e))
+        img_e, _ = wait_and_ss(driver, f"ERR_{tc_id}", timeout=4)
+        result = report_bug(driver, tc_id, "error", name, email, mobile, subject, err=str(e), img=img_e)
         traceback.print_exc()
     finally:
         driver.quit()
