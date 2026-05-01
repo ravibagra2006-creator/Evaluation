@@ -7,7 +7,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
+
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 # ==================== CONFIG ====================
@@ -105,9 +107,10 @@ def jira_description(tc, bug_type, summary, error=None):
     ]}
 
 def screenshot(driver, name):
+    """Screenshot lo aur file path return karo."""
     f = f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
     driver.save_screenshot(f)
-    print(f"Screenshot liya: {f}")
+    print(f"  📸 Screenshot liya: {f}")
     return f
 
 def create_jira_bug(summary, desc_adf, img):
@@ -118,14 +121,16 @@ def create_jira_bug(summary, desc_adf, img):
                          "issuetype": {"name": "Bug"}, "priority": {"name": "High"}}},
         auth=auth, headers={"Content-Type": "application/json"})
     if r.status_code != 201:
-        print(f"Jira error: {r.text}"); return None
+        print(f"  ❌ Jira error: {r.text}")
+        return None
     key = r.json()["key"]
-    print(f"Jira issue bana: {key} -- {summary}")
+    print(f"  🐛 Jira issue bana: {key} -- {summary}")
     if img and os.path.exists(img):
         with open(img, "rb") as f:
             requests.post(f"{JIRA_URL}/rest/api/3/issue/{key}/attachments",
                 headers={"X-Atlassian-Token": "no-check"},
                 files={"file": (os.path.basename(img), f, "image/png")}, auth=auth)
+        print(f"  📎 Screenshot attach kiya: {os.path.basename(img)}")
     return key
 
 def write_bug_file(tc, summary, img, jira_key, error_msg=""):
@@ -143,68 +148,142 @@ def write_bug_file(tc, summary, img, jira_key, error_msg=""):
 - **Screenshot:** {img or 'N/A'}
 - **Jira:** {jira_key or 'N/A'}
 """)
-    try: subprocess.Popen(["code", BUG_FILE])
-    except: pass
+    try:
+        subprocess.Popen(["code", BUG_FILE])
+    except Exception:
+        pass
 
 def report_bug(driver, tc, bug_type, ss_name, error=None):
     """Bug aane par -- screenshot lo, Jira issue banao, file me likho."""
     summary = get_summary(tc, bug_type)
     img     = screenshot(driver, ss_name)
     desc    = jira_description(tc, bug_type, summary, error)
-    # Jira Issue: summary = readable bug headline (e.g. "TC01 - Galat password...")
     key     = create_jira_bug(summary, desc, img)
     write_bug_file(tc, summary, img, key, error or summary)
     return summary
 
+# ==================== MAIN TEST FUNCTION ====================
 def run_test(tc):
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
     result = "UNKNOWN"
+
     try:
         driver.get(LOGIN_URL)
-        wait    = WebDriverWait(driver, 15)
+        wait = WebDriverWait(driver, 15)
+
+        # Input fields dhundo
         u_field = wait.until(EC.presence_of_element_located(
                       (By.XPATH, "//input[@type='text' or @type='email']")))
         p_field = wait.until(EC.presence_of_element_located(
                       (By.XPATH, "//input[@type='password']")))
-        u_field.clear(); u_field.send_keys(tc[1])
-        p_field.clear(); p_field.send_keys(tc[2])
-        p_field.send_keys(Keys.RETURN)
-        time.sleep(5)
 
-        logged_in = "dashboard" in driver.current_url.lower()
-        valid     = tc[3]
+        # Credentials bharo
+        u_field.clear()
+        u_field.send_keys(tc[1])
+        p_field.clear()
+        p_field.send_keys(tc[2])
+        p_field.send_keys(Keys.RETURN)
+
+        print(f"  ⏳ Login submit kiya, response ka wait kar rahe hain...")
+
+        # ============================================================
+        # TURANT SCREENSHOT LOGIC
+        # Pehle error message dikhne ka wait karo (max 8 sec)
+        # Agar error dikh gaya → ABHI screenshot lo (jab error screen pe ho)
+        # Agar error nahi aaya → dashboard check karo
+        # ============================================================
+        try:
+            WebDriverWait(driver, 8).until(
+                EC.visibility_of_element_located((By.XPATH,
+                    "//*[contains(@class,'invalid') or "
+                    "contains(@class,'alert-danger') or "
+                    "contains(@class,'error') or "
+                    "contains(@class,'text-danger') or "
+                    "contains(text(),'Invalid Email or Password') or "
+                    "contains(text(),'Invalid') or "
+                    "contains(text(),'incorrect') or "
+                    "contains(text(),'wrong')]"
+                ))
+            )
+            # ✅ Error message dikh gaya -- TURANT screenshot lo
+            print(f"  ⚡ Error message dikh gaya -- TURANT screenshot le raha hoon!")
+            logged_in = False
+
+        except TimeoutException:
+            # Error nahi aaya -- dashboard check karo
+            logged_in = "dashboard" in driver.current_url.lower()
+
+        # ============================================================
+        # Ab result decide karo aur zaroorat ho to screenshot lo
+        # ============================================================
+        valid = tc[3]
 
         if logged_in and not valid:
             # BUG: Galat/khaali credentials se login ho gaya - Security Bug
+            print(f"  🚨 BUG: Galat credentials se login ho gaya!")
             result = f"[BUG] {report_bug(driver, tc, 'security', f'{tc[0]}_security_bug')}"
 
         elif not logged_in and valid:
-            # BUG: Sahi credentials dalne par bhi login nahi hua - Authentication Bug
+            # BUG: Sahi credentials dalne par bhi login nahi hua
+            print(f"  🚨 BUG: Sahi credentials se login nahi hua!")
             result = f"[BUG] {report_bug(driver, tc, 'auth_fail', f'{tc[0]}_auth_fail')}"
 
         elif logged_in and valid:
+            # PASS: Sahi login
+            img = screenshot(driver, f"{tc[0]}_pass_loggedin")
             result = "[PASS] Sahi credentials se login hua"
 
         else:
-            result = "[PASS] Galat credentials se login fail hua"
+            # PASS: Galat credentials se login fail (expected)
+            # Screenshot already le liya jab error dikha tha
+            result = "[PASS] Galat credentials se login fail hua (expected)"
 
     except Exception as e:
-        # BUG: Test script crash ho gayi - Automation Error
+        # BUG: Script crash
+        print(f"  💥 Exception aaya: {e}")
         result = f"[ERROR] {report_bug(driver, tc, 'error', f'{tc[0]}_error', error=str(e))}"
+
     finally:
         driver.quit()
 
-    print(f"{'='*55}\n{tc[0]} --> {result}\n{'='*55}")
+    print(f"{'='*55}\n  {tc[0]} --> {result}\n{'='*55}")
     return result
 
-# ==================== MAIN ====================
-print("\n[START] QA Testing Shuru...\n")
-results = [(tc[0], run_test(tc)) for tc in TEST_CASES if not time.sleep(2)]
+# ==================== ENTRY POINT ====================
+if __name__ == "__main__":
+    print("\n" + "="*55)
+    print("  [START] QA Testing Shuru...")
+    print("="*55 + "\n")
 
-print("\n" + "="*55 + "\n[REPORT] FINAL REPORT\n" + "="*55)
-passed = sum(1 for _, r in results if r.startswith("[PASS]"))
-for name, res in results:
-    status = "[PASS]" if res.startswith("[PASS]") else "[FAIL]"
-    print(f"{status} {name}\n   {res}\n")
-print(f"Total: {len(results)} | Pass: {passed} | Fail: {len(results)-passed}")
-print(f"Bug File: {BUG_FILE}")
+    results = []
+    for tc in TEST_CASES:
+        print(f"\n▶ Running: {tc[0]}  |  User: '{tc[1]}'  |  Pass: '{tc[2]}'")
+        res = run_test(tc)
+        results.append((tc[0], res))
+        time.sleep(2)  # Test ke beech thoda gap
+
+    # Final Report
+    print("\n" + "="*55)
+    print("  [REPORT] FINAL REPORT")
+    print("="*55)
+
+    passed  = sum(1 for _, r in results if r.startswith("[PASS]"))
+    failed  = sum(1 for _, r in results if r.startswith("[BUG]"))
+    errors  = sum(1 for _, r in results if r.startswith("[ERROR]"))
+
+    for name, res in results:
+        if res.startswith("[PASS]"):
+            status = "✅ PASS"
+        elif res.startswith("[BUG]"):
+            status = "🐛 BUG "
+        else:
+            status = "❌ ERR "
+        print(f"  {status}  {name}")
+        print(f"         {res}\n")
+
+    print(f"  Total  : {len(results)}")
+    print(f"  ✅ Pass : {passed}")
+    print(f"  🐛 Bug  : {failed}")
+    print(f"  ❌ Error: {errors}")
+    print(f"\n  Bug File: {BUG_FILE}")
+    print("="*55 + "\n")
